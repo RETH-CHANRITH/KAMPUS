@@ -84,7 +84,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.example.kampus.ui.localization.rememberUiStrings
 import com.example.kampus.ui.theme.ThemeController
+import com.example.kampus.utils.ProfileImageUtils
 import com.example.kampus.data.repository.UserRepositoryImpl
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.auth.FirebaseAuth
@@ -150,6 +152,9 @@ fun PublicProfileScreen(
                 .verticalScroll(rememberScrollState()),
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
+                val displayCover = ProfileImageUtils.getEffectiveCoverImageUrl(state.userId, state.coverImageUrl)
+                val displayAvatar = ProfileImageUtils.getEffectiveProfileImageUrl(state.userId, state.profileImageUrl)
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -160,11 +165,11 @@ fun PublicProfileScreen(
                             )
                         ),
                 ) {
-                    if (state.coverImageUrl.isNotEmpty()) {
+                    if (displayCover.isNotEmpty()) {
                         val ctx = LocalContext.current
                         AsyncImage(
                             model = ImageRequest.Builder(ctx)
-                                .data(state.coverImageUrl)
+                                .data(displayCover)
                                 .crossfade(true)
                                 .build(),
                             placeholder = ColorPainter(Color.Gray.copy(alpha = 0.12f)),
@@ -204,11 +209,11 @@ fun PublicProfileScreen(
                                 .background(Bg),
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (state.profileImageUrl.isNotEmpty()) {
+                            if (displayAvatar.isNotEmpty()) {
                                 val ctx = LocalContext.current
                                 AsyncImage(
                                     model = ImageRequest.Builder(ctx)
-                                        .data(state.profileImageUrl)
+                                        .data(displayAvatar)
                                         .crossfade(true)
                                         .build(),
                                     placeholder = ColorPainter(Color.DarkGray.copy(alpha = 0.12f)),

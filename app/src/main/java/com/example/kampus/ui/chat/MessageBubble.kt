@@ -56,6 +56,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.kampus.ui.chat.Message
 import com.example.kampus.ui.theme.ThemeController
+import com.example.kampus.utils.ProfileImageUtils
 import coil.compose.AsyncImage
 import java.io.IOException
 import com.google.firebase.auth.FirebaseAuth
@@ -263,11 +264,10 @@ private fun TextBubble(message: Message, onLongPress: (() -> Unit)? = null, onRe
                     AttachmentPreview(message = message)
                 }
 
-                // Only show text if this is not an image attachment.
                 val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
                 val isHiddenForMe = currentUserId != null && message.hiddenTextFor.contains(currentUserId)
 
-                if (!isHiddenForMe && message.text.isNotBlank() && !isImageAttachment) {
+                if (!isHiddenForMe && message.text.isNotBlank() && !isImageAttachment && !message.isStoryReply) {
                     Text(
                         text       = message.text,
                         color      = if (message.isSentByMe) Color.White else if (UiIsDark) Color.White else Color(0xFF111827),
@@ -283,7 +283,6 @@ private fun TextBubble(message: Message, onLongPress: (() -> Unit)? = null, onRe
                 }
             }
         }
-
         // Show all persisted reactions as tappable chips (emoji + count). Highlight if current user reacted.
             Spacer(Modifier.height(6.dp))
             val currentUserId = FirebaseAuth.getInstance().currentUser?.uid
@@ -396,33 +395,19 @@ private fun MessageAvatar(
     avatarEmoji: String,
     modifier: Modifier = Modifier,
 ) {
+    val displayUrl = ProfileImageUtils.getEffectiveProfileImageUrl(avatarEmoji, profileImageUrl)
     Surface(
         shape = CircleShape,
         tonalElevation = 0.dp,
         shadowElevation = 1.dp,
         modifier = modifier,
     ) {
-        if (profileImageUrl.isNotBlank()) {
-            AsyncImage(
-                model = profileImageUrl,
-                contentDescription = "Avatar",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(if (UiIsDark) Color(0xFF1E2A3B) else Color(0xFFE5E7EB)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = avatarEmoji.ifBlank { "👤" },
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
+        AsyncImage(
+            model = displayUrl,
+            contentDescription = "Avatar",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
     }
 }
 

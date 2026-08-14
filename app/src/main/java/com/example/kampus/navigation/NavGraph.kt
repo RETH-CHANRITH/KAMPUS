@@ -38,6 +38,7 @@ import com.example.kampus.ui.screens.groups.groupsNavGraph
 import com.example.kampus.viewmodel.GroupsViewModel
 import com.example.kampus.ui.screens.groups.GroupRoutes
 import com.example.kampus.ui.notifications.NotificationScreen
+import com.example.kampus.ui.search.SearchScreen
 import com.example.kampus.ui.events.EventDetailScreen
 import com.example.kampus.ui.events.EventListScreen
 import com.example.kampus.ui.events.EventViewModel
@@ -58,6 +59,8 @@ import com.example.kampus.ui.profile.PublicProfileScreen
 import com.example.kampus.ui.profile.PublicFriendsScreen
 import com.example.kampus.ui.profile.SettingsScreen
 import com.example.kampus.ui.post.PostDetailScreen
+import com.example.kampus.MainActivity
+import android.os.Bundle
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 
@@ -72,6 +75,7 @@ object Routes {
     const val RESET_PASSWORD  = "reset_password"
     const val HOME            = "home"
     const val NOTIFICATIONS   = "notifications"
+    const val SEARCH          = "search"
 
     // Feed
     const val POST_CREATE     = "post_create"
@@ -134,17 +138,39 @@ object Routes {
 fun NavGraph(navController: NavHostController) {
     val globalChatViewModel: ChatViewModel = viewModel()
     val context = navController.context
+    fun handleIntent(intent: android.content.Intent?) {
+        val extras = intent?.extras ?: return
+        val openChatId = extras.getString("openChatId")
+        val storyId = extras.getString("storyId")
+        val replyId = extras.getString("replyId")
+        val openPostId = extras.getInt("openPostId", -1)
+        val openNotifications = extras.getBoolean("openNotifications", false)
+
+        if (!openChatId.isNullOrBlank()) {
+            navController.navigate(Routes.chatScreen(openChatId))
+            if (!replyId.isNullOrBlank()) {
+                globalChatViewModel.openChatAndFocusMessage(openChatId, replyId)
+            }
+        } else if (openPostId != -1) {
+            navController.navigate(Routes.postDetail(openPostId))
+        } else if (openNotifications) {
+            navController.navigate(Routes.NOTIFICATIONS)
+        }
+    }
+
     LaunchedEffect(Unit) {
         try {
-            val activity = context as? android.app.Activity
-            val extras = activity?.intent?.extras
-            val openChatId = extras?.getString("openChatId")
-            val storyId = extras?.getString("storyId")
-            val replyId = extras?.getString("replyId")
-            if (!openChatId.isNullOrBlank()) {
-                navController.navigate(Routes.chatScreen(openChatId))
-                if (!replyId.isNullOrBlank()) {
-                    globalChatViewModel.openChatAndFocusMessage(openChatId, replyId)
+            val activity = context as? MainActivity
+            if (activity != null) {
+                // 1. Process initial launch intent
+                handleIntent(activity.intent)
+                
+                // Clear intent extras to prevent double-navigation on rotation
+                activity.intent?.replaceExtras(Bundle())
+
+                // 2. Process incoming new intents (when tapped while app is in background/foreground)
+                activity.intentFlow.collect { newIntent ->
+                    handleIntent(newIntent)
                 }
             }
         } catch (_: Exception) {
@@ -307,12 +333,13 @@ fun NavGraph(navController: NavHostController) {
                 onCreatePost   = { navController.navigate(Routes.POST_CREATE) },
                 onProfileClick = { navController.navigate(Routes.PROFILE) },
                 onNotifClick   = { navController.navigate(Routes.NOTIFICATIONS) },
-                onSearchClick  = { },
+                onSearchClick  = { navController.navigate(Routes.SEARCH) },
                 onPostClick    = { postId -> navController.navigate(Routes.postDetail(postId)) },
                 onGroupsClick  = { navController.navigate(Routes.GROUP_LIST) },
                 onEventsClick  = { navController.navigate(Routes.EVENT_LIST) },
                 onChatClick    = { navController.navigate(Routes.CHAT_LIST) },
                 viewModel      = feedViewModel,
+                chatViewModel  = globalChatViewModel,
             )
         }
 
@@ -323,7 +350,17 @@ fun NavGraph(navController: NavHostController) {
             )
         }
 
-        // ── Create Post ───────────────────────────────────────────────────────
+        composable(Routes.SEARCH) {
+            SearchScreen(
+                onBack         = { navController.popBackStack() },
+                onPostClick    = { postId -> navController.navigate("post_detail/$postId") },
+                onProfileClick = { userId -> navController.navigate(Routes.profilePublic(userId)) },
+                onGroupClick   = { },
+                onEventClick   = { eventId -> navController.navigate("event_detail/$eventId") },
+            )
+        }
+
+
         composable(Routes.POST_CREATE) {
             val homeEntry = remember { navController.getBackStackEntry(Routes.HOME) }
             val feedViewModel: FeedViewModel = viewModel(homeEntry)
@@ -371,8 +408,11 @@ fun NavGraph(navController: NavHostController) {
         // ── Event List ─────────────────────────────────────────────────────────
         composable(Routes.EVENT_LIST) {
             val vm: EventViewModel = viewModel()
+            val homeEntry = runCatching { navController.getBackStackEntry(Routes.HOME) }.getOrNull()
+            val feedShareViewModel = homeEntry?.let { viewModel<FeedViewModel>(it) }
             EventListScreen(
                 viewModel      = vm,
+                feedViewModel  = feedShareViewModel,
                 onEventClick   = { navController.navigate(Routes.eventDetail(it.id)) },
                 onCommentOpen  = { navController.navigate(Routes.eventDetail(it.id, true)) },
                 onCreateClick  = { navController.navigate(Routes.EVENT_CREATE) },
@@ -406,6 +446,8 @@ fun NavGraph(navController: NavHostController) {
             } else {
                 viewModel(back)
             }
+            val homeEntry = runCatching { navController.getBackStackEntry(Routes.HOME) }.getOrNull()
+            val feedShareViewModel = homeEntry?.let { viewModel<FeedViewModel>(it) }
             val state = vm.uiState.collectAsStateWithLifecycle().value
             val event = state.events.firstOrNull { it.id == eventId }
             if (event == null) {
@@ -428,6 +470,7 @@ fun NavGraph(navController: NavHostController) {
                     onSave       = { vm.toggleSave(event) },
                     onBack       = { navController.popBackStack() },
                     viewModel    = vm,
+                    feedViewModel = feedShareViewModel,
                     openComposer = openComposer,
                 )
             }

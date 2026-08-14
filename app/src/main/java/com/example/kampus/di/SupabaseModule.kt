@@ -9,8 +9,8 @@ import com.example.kampus.data.remote.SupabaseStorageManager
 
 object SupabaseModule {
 
-    private const val SUPABASE_URL = "https://wcygigxevxohizwstkfg.supabase.co"
-    private const val SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndjeWdpZ3hldnhvaGl6d3N0a2ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NDM4MTMsImV4cCI6MjA5MTMxOTgxM30.bvRqxnT7ST3dk8vg71lNec6G_QiqcVMiBtGyE6pliFQ"
+    private const val SUPABASE_URL = "https://fisddiizqkgzbehkzkfg.supabase.co"
+    private const val SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpc2RkaWl6cWtnemJlaGt6a2ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYzMzk5ODcsImV4cCI6MjEwMTkxNTk4N30.TFmRiMwx9NPK2CchbNDJ3PkWsB3lR4vXa7smQTNs3Kk"
 
     private var supabaseClient: io.github.jan.supabase.SupabaseClient? = null
     private var storageManager: SupabaseStorageManager? = null

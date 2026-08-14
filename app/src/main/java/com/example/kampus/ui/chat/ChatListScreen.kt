@@ -45,6 +45,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.google.firebase.auth.FirebaseAuth
 import androidx.compose.ui.geometry.Offset
 import com.example.kampus.ui.feed.FeedViewModel
@@ -54,6 +55,7 @@ import com.example.kampus.ui.theme.ThemeController
 import com.example.kampus.ui.chat.ChatViewModel
 import com.example.kampus.ui.components.CampusBottomNavBar
 import com.example.kampus.ui.chat.StoryEntryMode
+import com.example.kampus.utils.ProfileImageUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -255,8 +257,13 @@ fun ChatListScreen(
 
         val activeStory = state.stories.firstOrNull { it.id == selectedStoryId }
         if (activeStory != null) {
+            val userStories = remember(state.stories, activeStory.ownerId) {
+                state.stories.filter { 
+                    it.ownerId == activeStory.ownerId && (it.storyType == "image" || it.storyType == "video")
+                }
+            }
             StoryViewerOverlay(
-                stories = state.stories,
+                stories = userStories,
                 startStoryId = activeStory.id,
                 viewModel = viewModel,
                 onDismiss = { selectedStoryId = null },
@@ -695,16 +702,16 @@ private fun ChatStoriesRow(
                                     .background(HChipBg),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (friend.profileImageUrl.isNotBlank()) {
-                                    AsyncImage(
-                                        model = friend.profileImageUrl,
-                                        contentDescription = friend.name,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize().clip(CircleShape)
-                                    )
-                                } else {
-                                    Text(text = friend.avatarEmoji.ifBlank { "👤" }, fontSize = 22.sp)
-                                }
+                                val friendAvatarUrl = ProfileImageUtils.getEffectiveProfileImageUrl(
+                                    friend.userId.ifBlank { friend.name },
+                                    friend.profileImageUrl
+                                )
+                                AsyncImage(
+                                    model = friendAvatarUrl,
+                                    contentDescription = friend.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize().clip(CircleShape)
+                                )
                             }
                         }
                     }
@@ -876,33 +883,23 @@ private fun FriendNoteBubble(
                 .border(3.dp, if (hasStory) Color(0xFFF6C177) else HGray6.copy(alpha = 0.55f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            if (friend.profileImageUrl.isNotBlank()) {
-                AsyncImage(
-                    model = friend.profileImageUrl,
-                    contentDescription = friend.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(3.dp)
-                        .clip(CircleShape),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(3.dp)
-                        .clip(CircleShape)
-                        .background(HChipBg),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = friend.avatarEmoji.ifBlank { "👤" },
-                        color = HWhite,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp,
-                    )
-                }
-            }
+            val context = LocalContext.current
+            val friendAvatarUrl = ProfileImageUtils.getEffectiveProfileImageUrl(
+                friend.userId.ifBlank { friend.name },
+                friend.profileImageUrl
+            )
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(friendAvatarUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = friend.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(3.dp)
+                    .clip(CircleShape),
+            )
         }
 
         Text(
@@ -952,32 +949,23 @@ private fun StoryNoteBubble(
                 .clip(CircleShape)
                 .border(3.dp, Color(0xFFF6C177), CircleShape),
         ) {
-            if (story.ownerProfileImageUrl.isNotBlank()) {
-                AsyncImage(
-                    model = story.ownerProfileImageUrl,
-                    contentDescription = story.ownerName,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(3.dp)
-                        .clip(CircleShape),
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(3.dp)
-                        .clip(CircleShape)
-                        .background(Color(story.ownerAvatarColor).copy(alpha = 0.25f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = story.ownerAvatarEmoji,
-                        color = HWhite,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            }
+            val context = LocalContext.current
+            val storyOwnerAvatarUrl = ProfileImageUtils.getEffectiveProfileImageUrl(
+                story.ownerId.ifBlank { story.ownerName },
+                story.ownerProfileImageUrl
+            )
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(storyOwnerAvatarUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = story.ownerName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(3.dp)
+                    .clip(CircleShape),
+            )
         }
 
         Text(
@@ -2011,6 +1999,11 @@ private fun chatColorFromTitle(title: String): Long {
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun AvatarWithBadge(chat: ChatItem) {
+    val context = LocalContext.current
+    val displayUrl = ProfileImageUtils.getEffectiveProfileImageUrl(
+        chat.otherUserId.ifBlank { chat.name },
+        chat.profileImageUrl
+    )
     Box(contentAlignment = Alignment.BottomEnd) {
         Box(
             modifier = Modifier
@@ -2020,21 +2013,15 @@ private fun AvatarWithBadge(chat: ChatItem) {
                 .border(1.5.dp, Color(chat.avatarColor).copy(alpha = 0.4f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
-            if (chat.profileImageUrl.isNotBlank()) {
-                AsyncImage(
-                    model = chat.profileImageUrl,
-                    contentDescription = chat.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize().clip(CircleShape),
-                )
-            } else {
-                Text(
-                    text       = chat.avatarEmoji.ifBlank { chat.avatarInitials },
-                    color      = Color(chat.avatarColor),
-                    fontSize   = 16.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                )
-            }
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(displayUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = chat.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
+            )
         }
         if (chat.isOnline) {
             Box(

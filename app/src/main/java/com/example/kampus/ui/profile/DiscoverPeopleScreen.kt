@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -52,7 +53,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.kampus.ui.localization.UiStrings
 import com.example.kampus.ui.localization.rememberUiStrings
 import com.google.firebase.auth.FirebaseAuth
@@ -60,6 +69,7 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.example.kampus.ui.theme.ThemeController
+import com.example.kampus.utils.ProfileImageUtils
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
@@ -76,6 +86,7 @@ private data class DiscoverPerson(
     val isNew: Boolean,
     val imageUrl: String,
     val coverImageUrl: String,
+    val isOnline: Boolean,
     val isRequested: Boolean,
     val isFriend: Boolean,
     val isFollowing: Boolean,
@@ -155,6 +166,16 @@ fun DiscoverPeopleScreen(
                         }
                         val isNewUser = createdAtMs > 0L && (System.currentTimeMillis() - createdAtMs) <= 7L * 24L * 60L * 60L * 1000L
                         val personId = doc.id
+                        val rawImg = doc.getString("profileImageUrl")
+                            ?: doc.getString("photoUrl")
+                            ?: doc.getString("avatarUrl")
+                            ?: doc.getString("imageUrl")
+                            ?: ""
+                        val rawCover = doc.getString("coverImageUrl")
+                            ?: doc.getString("coverPhotoUrl")
+                            ?: doc.getString("coverUrl")
+                            ?: doc.getString("bannerUrl")
+                            ?: ""
 
                         DiscoverPerson(
                             userId = personId,
@@ -165,8 +186,9 @@ fun DiscoverPeopleScreen(
                             following = followingCount,
                             mutualCount = 0,
                             isNew = isNewUser,
-                            imageUrl = doc.getString("profileImageUrl") ?: "",
-                            coverImageUrl = doc.getString("coverImageUrl") ?: "",
+                            imageUrl = ProfileImageUtils.getEffectiveProfileImageUrl(personId, rawImg),
+                            coverImageUrl = ProfileImageUtils.getEffectiveCoverImageUrl(personId, rawCover),
+                            isOnline = doc.getBoolean("isOnline") ?: false,
                             isRequested = false,
                             isFriend = false,
                             isFollowing = false,
@@ -404,76 +426,99 @@ private fun DiscoverCard(
             else -> DpBlue
         }
 
+    val displayCover = ProfileImageUtils.getEffectiveCoverImageUrl(person.userId, person.coverImageUrl)
+    val displayAvatar = ProfileImageUtils.getEffectiveProfileImageUrl(person.userId, person.imageUrl)
+
+    val context = LocalContext.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val cardScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1.0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "card_scale"
+    )
+
     Column(
         modifier = modifier
+            .graphicsLayer {
+                scaleX = cardScale
+                scaleY = cardScale
+            }
             .clip(RoundedCornerShape(16.dp))
             .background(DpCard)
-            .clickable(onClick = onOpenProfile),
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onOpenProfile
+            ),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(96.dp)
+                .height(104.dp)
                 .background(Color(0xFF1E2740)),
         ) {
-            if (person.coverImageUrl.isNotBlank()) {
-                AsyncImage(
-                    model = person.coverImageUrl,
-                    contentDescription = "${person.name} cover",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Black.copy(alpha = 0.10f), Color.Black.copy(alpha = 0.25f)),
-                            ),
-                        )
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                listOf(Color(0xFFAD46FF), Color(0xFF2B7FFF), Color(0xFF9810FA)),
-                            ),
-                        )
-                )
-            }
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(displayCover)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = "${person.name} cover",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.12f), Color.Black.copy(alpha = 0.35f)),
+                        ),
+                    )
+            )
 
             Box(
                 modifier = Modifier
-                    .padding(start = 16.dp, top = 56.dp)
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .border(4.dp, DpCard, CircleShape),
-                contentAlignment = Alignment.Center,
+                    .padding(start = 14.dp, top = 48.dp)
+                    .size(72.dp),
             ) {
-                if (person.imageUrl.isNotBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                        .background(DpCard)
+                        .border(3.5.dp, DpCard, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
                     AsyncImage(
-                        model = person.imageUrl,
+                        model = ImageRequest.Builder(context)
+                            .data(displayAvatar)
+                            .crossfade(true)
+                            .build(),
                         contentDescription = person.name,
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(CircleShape),
                         contentScale = ContentScale.Crop,
                     )
-                } else {
-                    Text(
-                        text = person.name.trim().take(1).uppercase().ifBlank { "?" },
-                        color = DpTextPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 30.sp,
+                }
+
+                if (person.isOnline) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = (-2).dp, y = (-2).dp)
+                            .size(15.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF22C55E))
+                            .border(2.5.dp, DpCard, CircleShape)
                     )
                 }
             }
         }
 
         Column(
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 48.dp, bottom = 16.dp),
+            modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 24.dp, bottom = 14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

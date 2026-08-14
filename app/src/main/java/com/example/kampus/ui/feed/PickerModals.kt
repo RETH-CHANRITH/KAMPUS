@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,10 +25,13 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as lazyItems
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
@@ -122,12 +127,31 @@ internal val FbLight = ComposerPalette(
 // Mock data
 private val mockFriends = listOf("John", "Sarah", "Mike", "Emma", "Carlos", "Luna", "Jacob", "Mia")
 private val mockLocations = listOf(
-    "New York", "San Francisco", "Los Angeles", "Chicago", "Boston", "Seattle", "Austin", "Denver",
-    "Miami", "Atlanta", "Portland", "Las Vegas", "Phoenix", "Philadelphia", "San Diego", "Dallas",
-    "Houston", "Washington DC", "London", "Paris", "Tokyo", "Sydney", "Toronto", "Dubai",
-    "Singapore", "Bangkok", "Amsterdam", "Berlin", "Madrid", "Barcelona", "Rome", "Venice",
-    "Bangkok", "Mumbai", "Delhi", "Bangkok", "Istanbul", "Cairo", "Johannesburg", "Mexico City",
-    "São Paulo", "Buenos Aires", "Santiago", "Lima", "Bogotá", "Cartagena", "Cancún", "Montego Bay"
+    "Phnom Penh",
+    "Banteay Meanchey",
+    "Battambang",
+    "Kampong Cham",
+    "Kampong Chhnang",
+    "Kampong Speu",
+    "Kampong Thom",
+    "Kampot",
+    "Kandal",
+    "Kep",
+    "Koh Kong",
+    "Kratie",
+    "Mondulkiri",
+    "Oddar Meanchey",
+    "Pailin",
+    "Preah Sihanouk",
+    "Preah Vihear",
+    "Prey Veng",
+    "Pursat",
+    "Ratanakiri",
+    "Siem Reap",
+    "Stung Treng",
+    "Svay Rieng",
+    "Takeo",
+    "Tboung Khmum",
 )
 private val mockEvents = listOf("Birthday", "Anniversary", "Wedding", "Graduation", "New Job", "Vacation", "Festival", "Concert", "Sports Event", "Movie Night", "Dinner", "Party")
 private val feelingEmojis = listOf(
@@ -258,6 +282,25 @@ internal fun FeelingEmojiPicker(
     }
 }
 
+private data class TagUserItem(
+    val id: String = "",
+    val displayName: String = "",
+    val handle: String = "",
+    val profileImageUrl: String = "",
+    val subtitle: String = "",
+)
+
+private val defaultTagUsers = listOf(
+    TagUserItem("u1", "John", "@john.doe", "", "@john.doe"),
+    TagUserItem("u2", "Sarah", "@sarah.wilson", "", "@sarah.wilson"),
+    TagUserItem("u3", "Mike", "@mike_smith", "", "@mike_smith"),
+    TagUserItem("u4", "Emma", "@emma.jones", "", "@emma.jones"),
+    TagUserItem("u5", "Carlos", "@carlos_c", "", "3 mutual friends"),
+    TagUserItem("u6", "Luna", "@luna_m", "", "2 mutual friends"),
+    TagUserItem("u7", "Jacob", "@jacob_lee", "", "@jacob_lee"),
+    TagUserItem("u8", "Mia", "@mia_k", "", "@mia_k"),
+)
+
 @Composable
 internal fun PeoplePicker(
     p: ComposerPalette,
@@ -268,23 +311,131 @@ internal fun PeoplePicker(
     var localSelected by remember { mutableStateOf(selected) }
     val strings = com.example.kampus.ui.localization.rememberUiStrings()
     var search by remember { mutableStateOf("") }
-    val filtered = mockFriends.filter { it.contains(search, ignoreCase = true) }
+    var usersList by remember { mutableStateOf<List<TagUserItem>>(emptyList()) }
 
-    Surface(color = p.bg) {
-        Column(modifier = Modifier.fillMaxWidth()) {
+    DisposableEffect(Unit) {
+        val db = runCatching { com.google.firebase.firestore.FirebaseFirestore.getInstance() }.getOrNull()
+        val currentUid = runCatching { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid.orEmpty() }.getOrDefault("")
+
+        var friendIds = emptySet<String>()
+        var followingIds = emptySet<String>()
+
+        var friendsListener: com.google.firebase.firestore.ListenerRegistration? = null
+        var followingListener: com.google.firebase.firestore.ListenerRegistration? = null
+        var usersListener: com.google.firebase.firestore.ListenerRegistration? = null
+
+        fun rebuildUsersList(snap: com.google.firebase.firestore.QuerySnapshot?) {
+            if (snap == null || snap.isEmpty) {
+                if (usersList.isEmpty()) usersList = defaultTagUsers
+                return
+            }
+            val fetched = snap.documents.mapNotNull { doc ->
+                if (doc.id == currentUid) return@mapNotNull null
+                val name = doc.getString("displayName") ?: doc.getString("name") ?: ""
+                if (name.isBlank()) return@mapNotNull null
+                val rawHandle = doc.getString("handle") ?: doc.getString("username") ?: ""
+                val handle = if (rawHandle.startsWith("@")) rawHandle else if (rawHandle.isNotBlank()) "@$rawHandle" else ""
+                val faculty = doc.getString("faculty") ?: doc.getString("major") ?: ""
+                val photoUrl = doc.getString("profileImageUrl")
+                    ?: doc.getString("photoUrl")
+                    ?: doc.getString("avatarUrl")
+                    ?: doc.getString("profile_image_url")
+                    ?: ""
+
+                val isFriend = doc.id in friendIds
+                val isFollowing = doc.id in followingIds
+                val statusSubtitle = when {
+                    isFriend -> "Friend · ${handle.ifBlank { faculty.ifBlank { "Student" } }}"
+                    isFollowing -> "Following · ${handle.ifBlank { faculty.ifBlank { "Student" } }}"
+                    handle.isNotBlank() -> handle
+                    faculty.isNotBlank() -> faculty
+                    else -> "Student"
+                }
+
+                Pair(
+                    isFriend || isFollowing,
+                    TagUserItem(
+                        id = doc.id,
+                        displayName = name,
+                        handle = handle,
+                        profileImageUrl = photoUrl,
+                        subtitle = statusSubtitle
+                    )
+                )
+            }.sortedByDescending { it.first }.map { it.second }
+
+            usersList = if (fetched.isNotEmpty()) fetched else defaultTagUsers
+        }
+
+        if (db != null && currentUid.isNotBlank()) {
+            friendsListener = db.collection("users").document(currentUid)
+                .collection("friends")
+                .addSnapshotListener { snap, _ ->
+                    friendIds = snap?.documents?.map { it.id }?.toSet().orEmpty()
+                }
+
+            followingListener = db.collection("users").document(currentUid)
+                .collection("following")
+                .addSnapshotListener { snap, _ ->
+                    followingIds = snap?.documents?.map { it.id }?.toSet().orEmpty()
+                }
+
+            usersListener = db.collection("users")
+                .limit(100)
+                .addSnapshotListener { snap, err ->
+                    if (err == null && snap != null) {
+                        rebuildUsersList(snap)
+                    }
+                }
+        } else {
+            usersList = defaultTagUsers
+        }
+
+        onDispose {
+            friendsListener?.remove()
+            followingListener?.remove()
+            usersListener?.remove()
+        }
+    }
+
+    val displayList = remember(usersList) {
+        if (usersList.isEmpty()) defaultTagUsers else usersList
+    }
+
+    val filtered = remember(search, displayList) {
+        if (search.isBlank()) displayList
+        else {
+            val q = search.trim().lowercase()
+            displayList.filter {
+                it.displayName.lowercase().contains(q) ||
+                        it.handle.lowercase().contains(q) ||
+                        it.subtitle.lowercase().contains(q)
+            }
+        }
+    }
+
+    val selectedUsersMap = remember(localSelected, displayList) {
+        localSelected.map { sel ->
+            displayList.firstOrNull { it.displayName.equals(sel, ignoreCase = true) || it.id == sel || it.handle.equals(sel, ignoreCase = true) }
+                ?: TagUserItem(id = sel, displayName = sel, handle = "", profileImageUrl = "", subtitle = "")
+        }
+    }
+
+    Surface(color = p.bg, modifier = Modifier.fillMaxHeight(0.85f)) {
+        Column(modifier = Modifier.fillMaxSize()) {
             // Header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(strings.tagPeople, color = p.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(strings.tagPeople, color = p.text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                 Box(
                     modifier = Modifier
                         .size(32.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(CircleShape)
                         .background(p.card)
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                             onSelect(localSelected)
@@ -296,66 +447,230 @@ internal fun PeoplePicker(
                 }
             }
 
-            HorizontalDivider(color = p.border.copy(alpha = 0.5f), thickness = 0.5.dp)
+            HorizontalDivider(color = p.border.copy(alpha = 0.4f), thickness = 0.5.dp)
 
             // Search box
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(p.card)
-                    .border(1.dp, p.border, RoundedCornerShape(10.dp))
-                    .padding(12.dp),
+                    .border(1.dp, p.border, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
-                BasicTextField(
-                    value = search,
-                    onValueChange = { search = it },
-                    textStyle = TextStyle(color = p.text, fontSize = 14.sp),
-                    modifier = Modifier.fillMaxWidth(),
-                    decorationBox = { inner ->
-                        if (search.isBlank()) {
-                            Text(strings.searchFriends, color = p.placeholder, fontSize = 14.sp)
-                        }
-                        inner()
-                    },
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = null,
+                        tint = p.placeholder,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    BasicTextField(
+                        value = search,
+                        onValueChange = { search = it },
+                        textStyle = TextStyle(color = p.text, fontSize = 14.sp),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        decorationBox = { inner ->
+                            if (search.isBlank()) {
+                                Text(strings.searchFriends, color = p.placeholder, fontSize = 14.sp)
+                            }
+                            inner()
+                        },
+                    )
+                }
             }
 
-            // Friends list - scrollable
-            if (filtered.isEmpty() && search.isNotEmpty()) {
-                Text(strings.noFriendsFound, color = p.textMuted, fontSize = 13.sp, modifier = Modifier.padding(16.dp))
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    lazyItems(if (search.isEmpty()) mockFriends else filtered) { friend ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(if (friend in localSelected) p.primary.copy(alpha = 0.2f) else p.card)
-                                .border(1.dp, if (friend in localSelected) p.primary else p.border, RoundedCornerShape(10.dp))
-                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                    localSelected = if (friend in localSelected) {
-                                        localSelected - friend
+            // Scrollable Friends list
+            Box(modifier = Modifier.weight(1f)) {
+                if (filtered.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(strings.noFriendsFound, color = p.textMuted, fontSize = 13.sp)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        lazyItems(filtered, key = { it.id.ifBlank { it.displayName } }) { user ->
+                            val isSelected = user.displayName in localSelected || user.id in localSelected || user.handle in localSelected
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(p.card)
+                                    .border(1.dp, if (isSelected) p.primary.copy(alpha = 0.5f) else p.border, RoundedCornerShape(14.dp))
+                                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                        val tagKey = user.displayName
+                                        localSelected = if (isSelected) {
+                                            localSelected.filterNot { it == tagKey || it == user.id || it == user.handle }
+                                        } else {
+                                            localSelected + tagKey
+                                        }
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                // Real Firebase Avatar / Standard Person Placeholder
+                                Box(
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF1E2240)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (user.profileImageUrl.isNotBlank()) {
+                                        AsyncImage(
+                                            model = user.profileImageUrl,
+                                            contentDescription = user.displayName,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop,
+                                        )
                                     } else {
-                                        localSelected + friend
+                                        Icon(
+                                            imageVector = Icons.Default.Person,
+                                            contentDescription = null,
+                                            tint = p.textMuted,
+                                            modifier = Modifier.size(22.dp)
+                                        )
                                     }
                                 }
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(friend, color = p.text, fontSize = 14.sp)
-                            if (friend in localSelected) {
-                                Text("✓", color = p.primary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+
+                                // Name and subtitle/handle
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = user.displayName,
+                                        color = p.text,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    if (user.subtitle.isNotBlank()) {
+                                        Text(
+                                            text = user.subtitle,
+                                            color = p.textMuted,
+                                            fontSize = 12.sp,
+                                        )
+                                    }
+                                }
+
+                                // Radio/Checkmark selection indicator
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) p.primary else Color.Transparent)
+                                        .border(2.dp, if (isSelected) p.primary else p.border, CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (isSelected) {
+                                        Text(
+                                            text = "✓",
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
+                }
+            }
+
+            // Bottom Selected Bar + Action Button
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(p.bg)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (localSelected.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "${localSelected.size} selected",
+                                color = p.text,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+
+                             // Avatar preview badges row
+                            Row(horizontalArrangement = Arrangement.spacedBy((-6).dp)) {
+                                selectedUsersMap.take(4).forEach { item ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(26.dp)
+                                            .clip(CircleShape)
+                                            .border(1.5.dp, p.bg, CircleShape)
+                                            .background(Color(0xFF1E2240)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        if (item.profileImageUrl.isNotBlank()) {
+                                            AsyncImage(
+                                                model = item.profileImageUrl,
+                                                contentDescription = null,
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Icon(
+                                                imageVector = Icons.Default.Person,
+                                                contentDescription = null,
+                                                tint = p.textMuted,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = "Clear",
+                            color = p.primary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                localSelected = emptyList()
+                            }
+                        )
+                    }
+                }
+
+                // Done button
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(p.primary)
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                            onSelect(localSelected)
+                            onClose()
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "Done",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             }
         }
@@ -373,6 +688,7 @@ internal fun LocationPicker(
     var currentLocation by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var hasPermission by remember { mutableStateOf(false) }
+    val cambodiaKeyword = "cambodia"
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
@@ -442,14 +758,17 @@ internal fun LocationPicker(
                                         append(address.countryName)
                                     }
                                 }
-                                currentLocation = if (locationName.isNotEmpty()) locationName else "$lat, $lng"
+                                val countryName = address.countryName.orEmpty()
+                                currentLocation = if (countryName.contains(cambodiaKeyword, ignoreCase = true)) {
+                                    if (locationName.isNotEmpty()) locationName else "$lat, $lng"
+                                } else {
+                                    null
+                                }
                             } else {
-                                currentLocation = "$lat, $lng"
+                                currentLocation = null
                             }
                         } catch (e: Exception) {
-                            val lat = location.latitude
-                            val lng = location.longitude
-                            currentLocation = "$lat, $lng"
+                            currentLocation = null
                         }
                     }
                 }

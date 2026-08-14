@@ -1,5 +1,4 @@
 package com.example.kampus.data.repository
-
 import androidx.compose.ui.graphics.Color
 import com.example.kampus.ui.groups.GroupJoinRequest
 import com.example.kampus.ui.groups.GroupData
@@ -19,7 +18,7 @@ class GroupRepositoryImpl(private val firestore: FirebaseFirestore) {
             ?: doc.getLong(field)
             ?: return fallback
         return Color(value.toULong())
-    }
+    } 
 
     private fun toGroupData(doc: com.google.firebase.firestore.DocumentSnapshot): GroupData {
         return GroupData(
